@@ -12,19 +12,25 @@ import type { CNDRequest, CNDWorkflowResponse } from "@/types/cnd";
 
 type Etapa = "processando" | "concluido" | "erro";
 
-// Converte Blob para Base64
-const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      // Remove o prefixo "data:application/pdf;base64,"
-      const base64 = result.split(",")[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+// Detecta se o conteúdo é PDF pelos primeiros bytes (magic number %PDF)
+const isPdfContent = (arrayBuffer: ArrayBuffer): boolean => {
+  const uint8Array = new Uint8Array(arrayBuffer);
+  return (
+    uint8Array[0] === 0x25 && // %
+    uint8Array[1] === 0x50 && // P
+    uint8Array[2] === 0x44 && // D
+    uint8Array[3] === 0x46    // F
+  );
+};
+
+// Converte ArrayBuffer para Base64
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 };
 
 const CNDFederalPage = () => {
@@ -68,16 +74,18 @@ const CNDFederalPage = () => {
         body: JSON.stringify(payload),
       });
 
-      const contentType = response.headers.get("content-type") || "";
+      // Obter resposta como ArrayBuffer para inspeção dos bytes
+      const arrayBuffer = await response.arrayBuffer();
       let pdfBase64Result = "";
 
-      if (contentType.includes("application/pdf")) {
-        // Resposta binária (PDF direto do n8n)
-        const blob = await response.blob();
-        pdfBase64Result = await blobToBase64(blob);
+      if (isPdfContent(arrayBuffer)) {
+        // Resposta é PDF binário (independente do content-type header)
+        pdfBase64Result = arrayBufferToBase64(arrayBuffer);
       } else {
-        // Resposta JSON (formato legado ou erro)
-        const rawData = await response.json();
+        // Tentar processar como JSON
+        const textDecoder = new TextDecoder();
+        const jsonString = textDecoder.decode(arrayBuffer);
+        const rawData = JSON.parse(jsonString);
         const data: CNDWorkflowResponse = Array.isArray(rawData) ? rawData[0] : rawData;
 
         if (data.sucesso && data.pdfBase64) {
