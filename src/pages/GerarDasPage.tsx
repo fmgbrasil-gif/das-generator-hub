@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DasForm } from "@/components/DasForm";
@@ -6,7 +6,7 @@ import { DasStatusCard } from "@/components/DasStatusCard";
 import { DasResumoCard } from "@/components/DasResumoCard";
 import { DasComposicaoTable } from "@/components/DasComposicaoTable";
 import { PdfDownloadButton } from "@/components/PdfDownloadButton";
-import { Loader2, FileSpreadsheet, Settings } from "lucide-react";
+import { Loader2, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import type { DasRequest, DasResponse } from "@/types/das";
@@ -15,31 +15,38 @@ import { getWebhookUrl, getContratanteCnpj, getAutorPedidoCnpj } from "@/utils/c
 const GerarDasPage = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [response, setResponse] = useState<DasResponse | null>(null);
+  const [config, setConfig] = useState({
+    webhookUrl: "",
+    contratanteCnpj: "",
+    autorPedidoCnpj: "",
+  });
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      const [webhookUrl, contratanteCnpj, autorPedidoCnpj] = await Promise.all([
+        getWebhookUrl(),
+        getContratanteCnpj(),
+        getAutorPedidoCnpj(),
+      ]);
+      setConfig({ webhookUrl, contratanteCnpj, autorPedidoCnpj });
+      setIsLoadingConfig(false);
+    };
+    loadConfig();
+  }, []);
 
   const handleSubmit = async (data: DasRequest) => {
-    const webhookUrl = getWebhookUrl();
-    const contratanteCnpj = getContratanteCnpj();
-    const autorPedidoCnpj = getAutorPedidoCnpj();
-    
-    if (!webhookUrl) {
+    if (!config.webhookUrl) {
       toast.error("URL do webhook não configurada", {
-        description: "Acesse as configurações para definir a URL do webhook",
-        action: {
-          label: "Configurar",
-          onClick: () => navigate("/servicos/gerar-das/configuracoes"),
-        },
+        description: "Peça ao administrador para configurar o sistema",
       });
       return;
     }
 
-    if (!contratanteCnpj || !autorPedidoCnpj) {
+    if (!config.contratanteCnpj || !config.autorPedidoCnpj) {
       toast.error("Configurações incompletas", {
-        description: "Configure o CNPJ do Contratante e Autor do Pedido",
-        action: {
-          label: "Configurar",
-          onClick: () => navigate("/servicos/gerar-das/configuracoes"),
-        },
+        description: "Peça ao administrador para configurar os CNPJs",
       });
       return;
     }
@@ -50,11 +57,11 @@ const GerarDasPage = () => {
     // Monta o payload conforme especificação da API Integra Contador (GERARDAS12)
     const payload = {
       contratante: {
-        numero: contratanteCnpj,
+        numero: config.contratanteCnpj,
         tipo: 2
       },
       autorPedidoDados: {
-        numero: autorPedidoCnpj,
+        numero: config.autorPedidoCnpj,
         tipo: 2
       },
       contribuinte: {
@@ -71,7 +78,7 @@ const GerarDasPage = () => {
     };
 
     try {
-      const res = await fetch(webhookUrl, {
+      const res = await fetch(config.webhookUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -108,6 +115,17 @@ const GerarDasPage = () => {
     }
   };
 
+  if (isLoadingConfig) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Carregando configurações...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -120,25 +138,14 @@ const GerarDasPage = () => {
               <p className="text-sm opacity-90">Painel de Geração de DAS</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/")}
-              className="bg-background/10 text-primary-foreground border-border/20 hover:bg-background/20"
-            >
-              Voltar
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/servicos/gerar-das/configuracoes")}
-              className="bg-background/10 text-primary-foreground border-border/20 hover:bg-background/20"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Configurações
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/")}
+            className="bg-background/10 text-primary-foreground border-border/20 hover:bg-background/20"
+          >
+            Voltar
+          </Button>
         </div>
       </header>
 

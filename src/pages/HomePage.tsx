@@ -1,16 +1,38 @@
-import { FileSpreadsheet, FileCheck, Sparkles, ShieldCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { FileSpreadsheet, FileCheck, Sparkles, ShieldCheck, Settings, LogIn, LogOut, Loader2 } from "lucide-react";
 import { ServiceCard } from "@/components/ServiceCard";
-import { getWebhookUrl, getContratanteCnpj, getAutorPedidoCnpj, getSitFisWebhookUrl, getCNDWebhookUrl } from "@/utils/config";
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { getAllAppSettings } from "@/hooks/useAppSettings";
 
 const HomePage = () => {
-  // Verificar se Gerar DAS está configurado
-  const isGerarDasConfigured = !!(getWebhookUrl() && getContratanteCnpj() && getAutorPedidoCnpj());
-  
-  // Verificar se Relatório Situação Fiscal está configurado
-  const isSitFisConfigured = !!(getSitFisWebhookUrl() && getContratanteCnpj() && getAutorPedidoCnpj());
+  const navigate = useNavigate();
+  const { user, isAdmin, isLoading: authLoading, signOut } = useAuth();
+  const [configStatus, setConfigStatus] = useState({
+    isGerarDasConfigured: false,
+    isSitFisConfigured: false,
+    isCNDConfigured: false,
+    isLoading: true,
+  });
 
-  // Verificar se CND Federal está configurado
-  const isCNDConfigured = !!getCNDWebhookUrl();
+  useEffect(() => {
+    const checkConfig = async () => {
+      const settings = await getAllAppSettings();
+      setConfigStatus({
+        isGerarDasConfigured: !!(settings.webhook_gerar_das && settings.cnpj_contratante && settings.cnpj_autor_pedido),
+        isSitFisConfigured: !!(settings.webhook_sitfis && settings.cnpj_contratante && settings.cnpj_autor_pedido),
+        isCNDConfigured: !!settings.webhook_cnd,
+        isLoading: false,
+      });
+    };
+    checkConfig();
+  }, []);
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background relative overflow-hidden">
@@ -19,6 +41,43 @@ const HomePage = () => {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,hsl(var(--accent)/0.05),transparent_50%)] pointer-events-none" />
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-20 max-w-7xl relative z-10">
+        {/* Top Bar */}
+        <div className="flex justify-end mb-8 gap-2">
+          {authLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          ) : user ? (
+            <>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/admin/configuracoes")}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Configurações
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Sair
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/login")}
+            >
+              <LogIn className="h-4 w-4 mr-2" />
+              Entrar
+            </Button>
+          )}
+        </div>
+
         {/* Header */}
         <header className="text-center mb-16 lg:mb-24 animate-fade-in">
           <div className="flex items-center justify-center mb-6">
@@ -49,7 +108,7 @@ const HomePage = () => {
               description="Gere o DAS de competências do Simples Nacional de forma rápida e segura"
               icon={FileSpreadsheet}
               servicePath="/servicos/gerar-das"
-              isConfigured={isGerarDasConfigured}
+              isConfigured={configStatus.isGerarDasConfigured}
               iconColor="text-primary"
             />
           </div>
@@ -60,7 +119,7 @@ const HomePage = () => {
               description="Consulte a situação fiscal de contribuintes pessoa física e jurídica"
               icon={FileCheck}
               servicePath="/servicos/relatorio-situacao-fiscal"
-              isConfigured={isSitFisConfigured}
+              isConfigured={configStatus.isSitFisConfigured}
               iconColor="text-accent"
             />
           </div>
@@ -71,7 +130,7 @@ const HomePage = () => {
               description="Emita a Certidão Negativa de Débitos da Receita Federal"
               icon={ShieldCheck}
               servicePath="/servicos/cnd-federal"
-              isConfigured={isCNDConfigured}
+              isConfigured={configStatus.isCNDConfigured}
               iconColor="text-success"
             />
           </div>
