@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useAppSettings, AppSettings } from "@/hooks/useAppSettings";
 import { Shield, ArrowLeft, Save, Loader2, Webhook, Building2 } from "lucide-react";
 import { toast } from "sonner";
+import { validateWebhookUrl } from "@/utils/logger";
 
 const ConfiguracoesPage = () => {
   const navigate = useNavigate();
@@ -24,6 +25,23 @@ const ConfiguracoesPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate webhook URLs before saving
+    const webhookFields: (keyof AppSettings)[] = ['webhook_gerar_das', 'webhook_sitfis', 'webhook_cnd'];
+    
+    for (const field of webhookFields) {
+      const url = formData[field];
+      if (url && url.trim() !== '') {
+        const validation = validateWebhookUrl(url);
+        if (!validation.valid) {
+          toast.error(`URL inválida em ${field.replace('webhook_', '').toUpperCase()}`, {
+            description: validation.error,
+          });
+          return;
+        }
+      }
+    }
+    
     setIsSaving(true);
 
     const result = await saveSettings(formData);
