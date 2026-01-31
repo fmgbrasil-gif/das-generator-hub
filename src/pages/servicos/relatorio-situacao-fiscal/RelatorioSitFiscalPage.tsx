@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Settings, FileCheck } from "lucide-react";
+import { FileCheck, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
 import { SitFisForm } from "@/components/sitfis/SitFisForm";
@@ -36,9 +36,28 @@ const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
 const RelatorioSitFiscalPage = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [etapa, setEtapa] = useState<Etapa | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [config, setConfig] = useState({
+    webhookUrl: "",
+    contratanteCnpj: "",
+    autorPedidoCnpj: "",
+  });
+
+  useEffect(() => {
+    const loadConfig = async () => {
+      const [webhookUrl, contratanteCnpj, autorPedidoCnpj] = await Promise.all([
+        getSitFisWebhookUrl(),
+        getContratanteCnpj(),
+        getAutorPedidoCnpj(),
+      ]);
+      setConfig({ webhookUrl, contratanteCnpj, autorPedidoCnpj });
+      setIsLoadingConfig(false);
+    };
+    loadConfig();
+  }, []);
 
   const handleSubmit = async (formData: SitFisRequest) => {
     setIsLoading(true);
@@ -46,14 +65,10 @@ const RelatorioSitFiscalPage = () => {
     setPdfBase64("");
     setErrorMessage("");
 
-    const webhookUrl = getSitFisWebhookUrl();
-    const contratanteCnpj = getContratanteCnpj();
-    const autorPedidoCnpj = getAutorPedidoCnpj();
-
-    if (!webhookUrl) {
+    if (!config.webhookUrl) {
       toast({
         title: "Configuração Incompleta",
-        description: "Configure a URL do webhook antes de continuar.",
+        description: "Peça ao administrador para configurar o webhook.",
         variant: "destructive",
       });
       setEtapa("erro");
@@ -62,10 +77,10 @@ const RelatorioSitFiscalPage = () => {
       return;
     }
 
-    if (!contratanteCnpj || !autorPedidoCnpj) {
+    if (!config.contratanteCnpj || !config.autorPedidoCnpj) {
       toast({
         title: "Configuração Incompleta",
-        description: "Configure os CNPJs do contratante e autor do pedido.",
+        description: "Peça ao administrador para configurar os CNPJs.",
         variant: "destructive",
       });
       setEtapa("erro");
@@ -79,11 +94,11 @@ const RelatorioSitFiscalPage = () => {
       const payload = {
         idServico: "SOLICITAR",
         cpfContribuinte: formData.cnpj.replace(/\D/g, ""),
-        cnpjContratante: contratanteCnpj,
-        cnpjAutor: autorPedidoCnpj,
+        cnpjContratante: config.contratanteCnpj,
+        cnpjAutor: config.autorPedidoCnpj,
       };
 
-      const response = await fetch(webhookUrl, {
+      const response = await fetch(config.webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -135,6 +150,17 @@ const RelatorioSitFiscalPage = () => {
     }
   };
 
+  if (isLoadingConfig) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Carregando configurações...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -147,25 +173,14 @@ const RelatorioSitFiscalPage = () => {
               <p className="text-sm opacity-90">Relatório de Situação Fiscal</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/")}
-              className="bg-background/10 text-primary-foreground border-border/20 hover:bg-background/20"
-            >
-              Voltar
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate("/servicos/relatorio-situacao-fiscal/configuracoes")}
-              className="bg-background/10 text-primary-foreground border-border/20 hover:bg-background/20"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Configurações
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/")}
+            className="bg-background/10 text-primary-foreground border-border/20 hover:bg-background/20"
+          >
+            Voltar
+          </Button>
         </div>
       </header>
 

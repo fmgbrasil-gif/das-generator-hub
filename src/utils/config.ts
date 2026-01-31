@@ -1,35 +1,50 @@
+import { getAllAppSettings, AppSettings } from "@/hooks/useAppSettings";
+
+// Cache for settings
+let cachedSettings: AppSettings | null = null;
+
+// Initialize settings from database
+export const initializeSettings = async (): Promise<void> => {
+  cachedSettings = await getAllAppSettings();
+};
+
+// Get cached settings or fetch if not available
+const getSettings = async (): Promise<AppSettings> => {
+  if (!cachedSettings) {
+    cachedSettings = await getAllAppSettings();
+  }
+  return cachedSettings;
+};
+
 // GERAR DAS
-const WEBHOOK_URL_KEY = "n8n_gerar_das_url";
-const CONTRATANTE_CNPJ_KEY = "integra_contratante_cnpj";
-const AUTOR_PEDIDO_CNPJ_KEY = "integra_autor_pedido_cnpj";
-
-export const getWebhookUrl = (): string => {
-  const savedUrl = localStorage.getItem(WEBHOOK_URL_KEY);
-  return savedUrl || import.meta.env.VITE_N8N_GERAR_DAS_URL || "";
+export const getWebhookUrl = async (): Promise<string> => {
+  const settings = await getSettings();
+  return settings.webhook_gerar_das;
 };
 
-export const getContratanteCnpj = (): string => {
-  return localStorage.getItem(CONTRATANTE_CNPJ_KEY) || "";
+export const getContratanteCnpj = async (): Promise<string> => {
+  const settings = await getSettings();
+  return settings.cnpj_contratante;
 };
 
-export const getAutorPedidoCnpj = (): string => {
-  return localStorage.getItem(AUTOR_PEDIDO_CNPJ_KEY) || "";
+export const getAutorPedidoCnpj = async (): Promise<string> => {
+  const settings = await getSettings();
+  return settings.cnpj_autor_pedido;
 };
 
-// RELATÓRIO SITUAÇÃO FISCAL - WORKFLOW COMPLETO
-const SITFIS_WEBHOOK_URL_KEY = "sitfis_webhook_url";
-
-export const getSitFisWebhookUrl = (): string => {
-  return localStorage.getItem(SITFIS_WEBHOOK_URL_KEY) || "";
+// RELATÓRIO SITUAÇÃO FISCAL
+export const getSitFisWebhookUrl = async (): Promise<string> => {
+  const settings = await getSettings();
+  return settings.webhook_sitfis;
 };
 
 // CND FEDERAL
-const CND_WEBHOOK_URL_KEY = "cnd_webhook_url";
-
-export const getCNDWebhookUrl = (): string => {
-  return localStorage.getItem(CND_WEBHOOK_URL_KEY) || "";
+export const getCNDWebhookUrl = async (): Promise<string> => {
+  const settings = await getSettings();
+  return settings.webhook_cnd;
 };
 
-export const setCNDWebhookUrl = (url: string): void => {
-  localStorage.setItem(CND_WEBHOOK_URL_KEY, url);
+// Invalidate cache (call after settings are updated)
+export const invalidateSettingsCache = (): void => {
+  cachedSettings = null;
 };
