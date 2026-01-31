@@ -22,3 +22,14 @@ const SITFIS_WEBHOOK_URL_KEY = "sitfis_webhook_url";
 export const getSitFisWebhookUrl = (): string => {
   return localStorage.getItem(SITFIS_WEBHOOK_URL_KEY) || "";
 };
+
+// CND FEDERAL
+const CND_WEBHOOK_URL_KEY = "cnd_webhook_url";
+
+export const getCNDWebhookUrl = (): string => {
+  return localStorage.getItem(CND_WEBHOOK_URL_KEY) || "";
+};
+
+export const setCNDWebhookUrl = (url: string): void => {
+  localStorage.setItem(CND_WEBHOOK_URL_KEY, url);
+};

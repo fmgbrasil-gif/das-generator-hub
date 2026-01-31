@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Settings, FileCheck } from "lucide-react";
+import { Settings, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/use-toast";
-import { SitFisForm } from "@/components/sitfis/SitFisForm";
-import { SitFisStatusCard } from "@/components/sitfis/SitFisStatusCard";
-import { SitFisRelatorioCard } from "@/components/sitfis/SitFisRelatorioCard";
-import { getSitFisWebhookUrl, getContratanteCnpj, getAutorPedidoCnpj } from "@/utils/config";
-import type { SitFisRequest, SitFisWorkflowResponse } from "@/types/sitfis";
+import { CNDForm } from "@/components/cnd/CNDForm";
+import { CNDStatusCard } from "@/components/cnd/CNDStatusCard";
+import { CNDResultCard } from "@/components/cnd/CNDResultCard";
+import { getCNDWebhookUrl } from "@/utils/config";
+import type { CNDRequest, CNDWorkflowResponse } from "@/types/cnd";
 
 type Etapa = "processando" | "concluido" | "erro";
 
@@ -27,22 +27,20 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-const RelatorioSitFiscalPage = () => {
+const CNDFederalPage = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [etapa, setEtapa] = useState<Etapa | null>(null);
   const [pdfBase64, setPdfBase64] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
 
-  const handleSubmit = async (formData: SitFisRequest) => {
+  const handleSubmit = async (formData: CNDRequest) => {
     setIsLoading(true);
     setEtapa("processando");
     setPdfBase64("");
     setErrorMessage("");
 
-    const webhookUrl = getSitFisWebhookUrl();
-    const contratanteCnpj = getContratanteCnpj();
-    const autorPedidoCnpj = getAutorPedidoCnpj();
+    const webhookUrl = getCNDWebhookUrl();
 
     if (!webhookUrl) {
       toast({
@@ -56,25 +54,12 @@ const RelatorioSitFiscalPage = () => {
       return;
     }
 
-    if (!contratanteCnpj || !autorPedidoCnpj) {
-      toast({
-        title: "Configuração Incompleta",
-        description: "Configure os CNPJs do contratante e autor do pedido.",
-        variant: "destructive",
-      });
-      setEtapa("erro");
-      setErrorMessage("CNPJs não configurados");
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      // Payload para o workflow n8n completo (com idServico para o Switch)
+      // Payload para o workflow n8n (rota emitircnd no Switch)
       const payload = {
-        idServico: "SOLICITAR",
-        cpfContribuinte: formData.cnpj.replace(/\D/g, ""),
-        cnpjContratante: contratanteCnpj,
-        cnpjAutor: autorPedidoCnpj,
+        idServico: "emitircnd",
+        CNPJ: formData.cnpj.replace(/\D/g, ""),
+        tipoPessoa: formData.tipoPessoa,
       };
 
       const response = await fetch(webhookUrl, {
@@ -93,12 +78,12 @@ const RelatorioSitFiscalPage = () => {
       } else {
         // Resposta JSON (formato legado ou erro)
         const rawData = await response.json();
-        const data: SitFisWorkflowResponse = Array.isArray(rawData) ? rawData[0] : rawData;
+        const data: CNDWorkflowResponse = Array.isArray(rawData) ? rawData[0] : rawData;
 
         if (data.sucesso && data.pdfBase64) {
           pdfBase64Result = data.pdfBase64;
         } else {
-          const errorMsg = data.erro || data.mensagem || "Erro ao gerar relatório";
+          const errorMsg = data.erro || data.mensagem || "Erro ao emitir CND";
           throw new Error(errorMsg);
         }
       }
@@ -107,21 +92,21 @@ const RelatorioSitFiscalPage = () => {
         setPdfBase64(pdfBase64Result);
         setEtapa("concluido");
         toast({
-          title: "Relatório Gerado",
-          description: "O relatório de situação fiscal foi gerado com sucesso!",
+          title: "CND Emitida",
+          description: "A Certidão Negativa de Débitos foi emitida com sucesso!",
         });
       } else {
         throw new Error("Nenhum PDF retornado pelo servidor");
       }
     } catch (error) {
-      console.error("Erro ao gerar relatório:", error);
+      console.error("Erro ao emitir CND:", error);
       toast({
         title: "Erro de Rede",
         description: "Não foi possível conectar ao servidor. Verifique sua conexão.",
         variant: "destructive",
       });
       setEtapa("erro");
-      setErrorMessage("Erro de conexão");
+      setErrorMessage(error instanceof Error ? error.message : "Erro de conexão");
     } finally {
       setIsLoading(false);
     }
@@ -133,10 +118,10 @@ const RelatorioSitFiscalPage = () => {
       <header className="bg-gradient-header text-primary-foreground shadow-md">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <FileCheck className="h-8 w-8" />
+            <ShieldCheck className="h-8 w-8" />
             <div>
               <h1 className="text-2xl font-bold">FMG – Integra Contador</h1>
-              <p className="text-sm opacity-90">Relatório de Situação Fiscal</p>
+              <p className="text-sm opacity-90">Emitir CND Federal</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -151,7 +136,7 @@ const RelatorioSitFiscalPage = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate("/servicos/relatorio-situacao-fiscal/configuracoes")}
+              onClick={() => navigate("/servicos/cnd-federal/configuracoes")}
               className="bg-background/10 text-primary-foreground border-border/20 hover:bg-background/20"
             >
               <Settings className="h-4 w-4 mr-2" />
@@ -170,11 +155,11 @@ const RelatorioSitFiscalPage = () => {
               <CardHeader>
                 <CardTitle>Dados do Contribuinte</CardTitle>
                 <CardDescription>
-                  Informe os dados para gerar o relatório de situação fiscal
+                  Informe os dados para emitir a Certidão Negativa de Débitos Federal
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <SitFisForm onSubmit={handleSubmit} isLoading={isLoading} />
+                <CNDForm onSubmit={handleSubmit} isLoading={isLoading} />
               </CardContent>
             </Card>
           </div>
@@ -184,23 +169,23 @@ const RelatorioSitFiscalPage = () => {
             {!etapa && (
               <Card className="border-dashed">
                 <CardContent className="pt-12 pb-12 text-center">
-                  <FileCheck className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <ShieldCheck className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
                   <p className="text-muted-foreground">
-                    Preencha os dados e clique em "Gerar Relatório" para começar
+                    Preencha os dados e clique em "Emitir CND Federal" para começar
                   </p>
                 </CardContent>
               </Card>
             )}
 
             {etapa && etapa !== "concluido" && (
-              <SitFisStatusCard 
+              <CNDStatusCard 
                 etapa={etapa} 
                 mensagem={errorMessage}
               />
             )}
 
             {etapa === "concluido" && pdfBase64 && (
-              <SitFisRelatorioCard pdfBase64={pdfBase64} />
+              <CNDResultCard pdfBase64={pdfBase64} />
             )}
           </div>
         </div>
@@ -209,11 +194,11 @@ const RelatorioSitFiscalPage = () => {
       {/* Footer */}
       <footer className="mt-12 py-6 border-t bg-muted/30">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          <p>© 2025 FMG – Integra Contador | Relatório de Situação Fiscal</p>
+          <p>© 2025 FMG – Integra Contador | CND Federal</p>
         </div>
       </footer>
     </div>
   );
 };
 
-export default RelatorioSitFiscalPage;
+export default CNDFederalPage;
