@@ -97,7 +97,9 @@ const GerarDasPage = () => {
         });
       }
     } catch (error) {
-      console.error("Erro ao chamar webhook:", error);
+      if (import.meta.env.DEV) {
+        console.error("Erro ao chamar webhook:", error);
+      }
       toast.error("Erro de conexão", {
         description: "Não foi possível conectar ao servidor. Tente novamente.",
       });

@@ -80,7 +80,38 @@ export const formatCurrency = (value: number): string => {
 
 export const validateCNPJ = (cnpj: string): boolean => {
   const numbers = cnpj.replace(/\D/g, '');
-  return numbers.length === 14;
+  if (numbers.length !== 14) return false;
+  
+  // Check for known invalid patterns (all same digit)
+  if (/^(\d)\1{13}$/.test(numbers)) return false;
+  
+  // Validate first check digit
+  let size = numbers.length - 2;
+  let digits = numbers.substring(0, size);
+  let sum = 0;
+  let pos = size - 7;
+  
+  for (let i = size; i >= 1; i--) {
+    sum += parseInt(digits.charAt(size - i)) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  
+  let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (result !== parseInt(numbers.charAt(size))) return false;
+  
+  // Validate second check digit
+  size = size + 1;
+  digits = numbers.substring(0, size);
+  sum = 0;
+  pos = size - 7;
+  
+  for (let i = size; i >= 1; i--) {
+    sum += parseInt(digits.charAt(size - i)) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  
+  result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  return result === parseInt(numbers.charAt(size));
 };
 
 export const validateCompetencia = (competencia: string): boolean => {

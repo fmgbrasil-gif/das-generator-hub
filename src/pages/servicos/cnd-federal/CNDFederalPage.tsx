@@ -116,7 +116,9 @@ const CNDFederalPage = () => {
         throw new Error("Nenhum PDF retornado pelo servidor");
       }
     } catch (error) {
-      console.error("Erro ao emitir CND:", error);
+      if (import.meta.env.DEV) {
+        console.error("Erro ao emitir CND:", error);
+      }
       toast({
         title: "Erro de Rede",
         description: "Não foi possível conectar ao servidor. Verifique sua conexão.",

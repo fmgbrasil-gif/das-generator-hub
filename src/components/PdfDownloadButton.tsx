@@ -33,7 +33,9 @@ export const PdfDownloadButton = ({ das }: PdfDownloadButtonProps) => {
         // Limpar o URL após o download
         setTimeout(() => URL.revokeObjectURL(url), 100);
       } catch (error) {
-        console.error("Erro ao processar PDF Base64:", error);
+        if (import.meta.env.DEV) {
+          console.error("Erro ao processar PDF Base64:", error);
+        }
         alert("Erro ao fazer download do PDF. Por favor, tente novamente.");
       }
     }
