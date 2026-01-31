@@ -1,215 +1,125 @@
 
-# Plano: Adaptar Frontend para Nova Estrutura do Workflow n8n + Funcionalidade CND Federal
+# Plano: Corrigir Visualização de PDF no Módulo CND Federal
 
-## Resumo das Mudanças no Workflow n8n
+## Problema Identificado
 
-O workflow agora utiliza um **Switch** para rotear requisições baseado no campo `idServico`:
+A resposta do workflow n8n está retornando:
+- **Header:** `content-type: application/json`
+- **Body:** Conteúdo binário do PDF (ex: `%PDF-1.4...`)
 
-| idServico | Funcionalidade |
-|-----------|----------------|
-| (genérico) | Gerar DAS |
-| `SOLICITAR` | Relatório de Situação Fiscal (SITFIS) |
-| `emitircnd` | **NOVO** - Emitir CND Federal |
+O código atual verifica o `content-type` e, como indica JSON, tenta `response.json()` que falha porque o corpo é um PDF binário.
 
----
+## Solução
 
-## 1. Atualizar Payload Atual do SITFIS
-
-### Mudança Necessária
-
-O payload atual NÃO envia o campo `idServico` - o workflow identifica apenas pelo campo `cpfContribuinte`. Para maior clareza e compatibilidade com o novo Switch, devemos adicionar `idServico`.
-
-### Arquivo: `src/pages/servicos/relatorio-situacao-fiscal/RelatorioSitFiscalPage.tsx`
-
-```typescript
-// Payload ATUAL
-const payload = {
-  cpfContribuinte: formData.cnpj.replace(/\D/g, ""),
-  cnpjContratante: contratanteCnpj,
-  cnpjAutor: autorPedidoCnpj,
-};
-
-// Payload NOVO (adicionar idServico)
-const payload = {
-  idServico: "SOLICITAR",  // ← ADICIONAR
-  cpfContribuinte: formData.cnpj.replace(/\D/g, ""),
-  cnpjContratante: contratanteCnpj,
-  cnpjAutor: autorPedidoCnpj,
-};
-```
+Implementar detecção inteligente que verifica o conteúdo real da resposta, não apenas o header `content-type`.
 
 ---
 
-## 2. Criar Nova Página: Emitir CND Federal
+## Arquivo: `src/pages/servicos/cnd-federal/CNDFederalPage.tsx`
 
-### 2.1 Adicionar Tipos para CND Federal
+### Alteração na Lógica de Processamento da Resposta
 
-**Arquivo:** `src/types/sitfis.ts` (ou criar `src/types/cnd.ts`)
+A estratégia será:
+1. Primeiro, obter a resposta como ArrayBuffer
+2. Verificar os primeiros bytes para detectar se é PDF (`%PDF`)
+3. Se for PDF binário, converter para Base64
+4. Se não for PDF, tratar como JSON
+
+### Código Modificado
 
 ```typescript
-export interface CNDRequest {
-  cnpj: string;
-  tipoPessoa: "PF" | "PJ";
+// Função auxiliar para detectar PDF pelos primeiros bytes
+const isPdfContent = (arrayBuffer: ArrayBuffer): boolean => {
+  const uint8Array = new Uint8Array(arrayBuffer);
+  // PDF começa com "%PDF" (0x25 0x50 0x44 0x46)
+  return (
+    uint8Array[0] === 0x25 && // %
+    uint8Array[1] === 0x50 && // P
+    uint8Array[2] === 0x44 && // D
+    uint8Array[3] === 0x46    // F
+  );
+};
+
+// Função para converter ArrayBuffer em Base64
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+};
+
+// Na função handleSubmit:
+const response = await fetch(webhookUrl, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload),
+});
+
+// Obter resposta como ArrayBuffer para inspeção
+const arrayBuffer = await response.arrayBuffer();
+let pdfBase64Result = "";
+
+if (isPdfContent(arrayBuffer)) {
+  // Resposta é PDF binário (independente do content-type)
+  pdfBase64Result = arrayBufferToBase64(arrayBuffer);
+} else {
+  // Tentar processar como JSON
+  const textDecoder = new TextDecoder();
+  const jsonString = textDecoder.decode(arrayBuffer);
+  const rawData = JSON.parse(jsonString);
+  const data: CNDWorkflowResponse = Array.isArray(rawData) ? rawData[0] : rawData;
+
+  if (data.sucesso && data.pdfBase64) {
+    pdfBase64Result = data.pdfBase64;
+  } else {
+    const errorMsg = data.erro || data.mensagem || "Erro ao emitir CND";
+    throw new Error(errorMsg);
+  }
 }
-
-export interface CNDWorkflowResponse {
-  sucesso: boolean;
-  pdfBase64?: string;
-  erro?: string;
-  mensagem?: string;
-}
-```
-
-### 2.2 Criar Formulário CND
-
-**Arquivo:** `src/components/cnd/CNDForm.tsx`
-
-Formulário similar ao SITFIS com:
-- Seleção Tipo de Pessoa (PF/PJ)
-- Campo CNPJ/CPF
-- Botão "Emitir CND Federal"
-
-### 2.3 Criar Card de Resultado CND
-
-**Arquivo:** `src/components/cnd/CNDResultCard.tsx`
-
-Reutilizar lógica do `SitFisRelatorioCard.tsx`:
-- Visualizador PDF embutido
-- Botão Download
-- Título: "Certidão Negativa de Débitos - CND Federal"
-
-### 2.4 Criar Página Principal CND
-
-**Arquivo:** `src/pages/servicos/cnd-federal/CNDFederalPage.tsx`
-
-Estrutura similar ao `RelatorioSitFiscalPage.tsx`:
-
-```typescript
-const handleSubmit = async (formData: CNDRequest) => {
-  const payload = {
-    idServico: "emitircnd",  // ← Rota para CND no Switch
-    CNPJ: formData.cnpj.replace(/\D/g, ""),
-    tipoPessoa: formData.tipoPessoa,
-  };
-
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  // Processar resposta binária (PDF direto)
-  const blob = await response.blob();
-  // ... converter para base64 e exibir
-};
-```
-
-### 2.5 Adicionar Rota
-
-**Arquivo:** `src/App.tsx`
-
-```typescript
-<Route path="/servicos/cnd-federal" element={<CNDFederalPage />} />
-<Route path="/servicos/cnd-federal/configuracoes" element={<ConfiguracoesCND />} />
 ```
 
 ---
 
-## 3. Atualizar Configurações
+## Arquivo: `src/pages/servicos/relatorio-situacao-fiscal/RelatorioSitFiscalPage.tsx`
 
-### 3.1 Adicionar URL de Webhook para CND
-
-**Arquivo:** `src/utils/config.ts`
-
-```typescript
-// CND Federal
-const CND_WEBHOOK_URL_KEY = "cnd_webhook_url";
-
-export const getCNDWebhookUrl = (): string => {
-  return localStorage.getItem(CND_WEBHOOK_URL_KEY) || "";
-};
-
-export const setCNDWebhookUrl = (url: string): void => {
-  localStorage.setItem(CND_WEBHOOK_URL_KEY, url);
-};
-```
-
-**Nota:** Como o workflow usa o MESMO webhook (com Switch), podemos reutilizar a mesma URL do SITFIS ou configurar separadamente para flexibilidade.
-
-### 3.2 Criar Página de Configurações CND
-
-**Arquivo:** `src/pages/servicos/cnd-federal/ConfiguracoesCND.tsx`
-
-Similar ao `ConfiguracoesRelatorioSitFiscal.tsx`.
-
----
-
-## 4. Atualizar Home Page
-
-### Arquivo: `src/pages/HomePage.tsx` (ou equivalente)
-
-Adicionar card/link para o novo serviço:
-
-```typescript
-<ServiceCard
-  title="CND Federal"
-  description="Emitir Certidão Negativa de Débitos da Receita Federal"
-  icon={<FileCheck className="h-8 w-8" />}
-  to="/servicos/cnd-federal"
-/>
-```
-
----
-
-## 5. Estrutura de Arquivos Final
-
-```text
-src/
-├── components/
-│   ├── sitfis/           (existente)
-│   │   ├── SitFisForm.tsx
-│   │   ├── SitFisRelatorioCard.tsx
-│   │   └── SitFisStatusCard.tsx
-│   └── cnd/              (NOVO)
-│       ├── CNDForm.tsx
-│       ├── CNDResultCard.tsx
-│       └── CNDStatusCard.tsx
-├── pages/
-│   └── servicos/
-│       ├── relatorio-situacao-fiscal/   (existente)
-│       └── cnd-federal/                  (NOVO)
-│           ├── CNDFederalPage.tsx
-│           └── ConfiguracoesCND.tsx
-└── types/
-    ├── sitfis.ts         (atualizar)
-    └── cnd.ts            (NOVO, opcional)
-```
-
----
-
-## 6. Payload Comparativo
-
-| Campo | SITFIS | CND Federal |
-|-------|--------|-------------|
-| `idServico` | `"SOLICITAR"` | `"emitircnd"` |
-| `cpfContribuinte` / `CNPJ` | CNPJ do contribuinte | CNPJ do contribuinte |
-| `cnpjContratante` | CNPJ do escritório | - |
-| `cnpjAutor` | CNPJ do autor | - |
-| `tipoPessoa` | - | `"PF"` ou `"PJ"` |
+Aplicar a mesma correção para garantir consistência em todo o sistema.
 
 ---
 
 ## Resumo das Tarefas
 
-| # | Tarefa | Arquivos |
-|---|--------|----------|
-| 1 | Adicionar `idServico: "SOLICITAR"` ao payload SITFIS | `RelatorioSitFiscalPage.tsx` |
-| 2 | Criar tipos para CND | `src/types/cnd.ts` ou `sitfis.ts` |
-| 3 | Criar componente `CNDForm.tsx` | `src/components/cnd/` |
-| 4 | Criar componente `CNDResultCard.tsx` | `src/components/cnd/` |
-| 5 | Criar componente `CNDStatusCard.tsx` | `src/components/cnd/` |
-| 6 | Criar página `CNDFederalPage.tsx` | `src/pages/servicos/cnd-federal/` |
-| 7 | Criar página `ConfiguracoesCND.tsx` | `src/pages/servicos/cnd-federal/` |
-| 8 | Adicionar funções de config no `config.ts` | `src/utils/config.ts` |
-| 9 | Adicionar rotas no `App.tsx` | `src/App.tsx` |
-| 10 | Adicionar link na Home Page | `src/pages/HomePage.tsx` ou `Index.tsx` |
+| # | Tarefa | Arquivo |
+|---|--------|---------|
+| 1 | Adicionar função `isPdfContent()` para detectar PDF pelos primeiros bytes | `CNDFederalPage.tsx` |
+| 2 | Adicionar função `arrayBufferToBase64()` para conversão | `CNDFederalPage.tsx` |
+| 3 | Modificar `handleSubmit` para usar detecção por conteúdo | `CNDFederalPage.tsx` |
+| 4 | Aplicar mesma correção no SITFIS | `RelatorioSitFiscalPage.tsx` |
+
+---
+
+## Detalhes Técnicos
+
+### Por que essa abordagem?
+
+1. **Robustez:** Não depende do header `content-type` que pode estar incorreto
+2. **Detecção Precisa:** Arquivos PDF sempre começam com `%PDF` (bytes 0x25 0x50 0x44 0x46)
+3. **Compatibilidade:** Funciona tanto se o n8n enviar o PDF com header correto quanto incorreto
+4. **Fallback JSON:** Se não for PDF, tenta processar como JSON normalmente
+
+### Fluxo de Dados
+
+```text
+Resposta n8n
+     |
+     v
+ArrayBuffer (dados brutos)
+     |
+     v
+Verifica primeiros 4 bytes
+     |
+     +-- É "%PDF"? --> Converte para Base64 --> Exibe no iframe
+     |
+     +-- Não é PDF --> Decodifica como JSON --> Extrai pdfBase64
+```
