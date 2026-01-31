@@ -1,125 +1,227 @@
 
-# Plano: Corrigir Visualização de PDF no Módulo CND Federal
+# Plano: Centralizar Configurações com Acesso Admin via Supabase
 
-## Problema Identificado
+## Resumo
 
-A resposta do workflow n8n está retornando:
-- **Header:** `content-type: application/json`
-- **Body:** Conteúdo binário do PDF (ex: `%PDF-1.4...`)
-
-O código atual verifica o `content-type` e, como indica JSON, tenta `response.json()` que falha porque o corpo é um PDF binário.
-
-## Solução
-
-Implementar detecção inteligente que verifica o conteúdo real da resposta, não apenas o header `content-type`.
+Criar uma seção centralizada de **Configurações do Sistema** acessível apenas por usuários com role `admin`. As configurações serão armazenadas no banco de dados Supabase (tabela `app_settings`) em vez de localStorage.
 
 ---
 
-## Arquivo: `src/pages/servicos/cnd-federal/CNDFederalPage.tsx`
+## 1. Estrutura do Banco de Dados
 
-### Alteração na Lógica de Processamento da Resposta
+### Tabela Existente: `app_settings`
 
-A estratégia será:
-1. Primeiro, obter a resposta como ArrayBuffer
-2. Verificar os primeiros bytes para detectar se é PDF (`%PDF`)
-3. Se for PDF binário, converter para Base64
-4. Se não for PDF, tratar como JSON
+A tabela já existe com a estrutura adequada:
 
-### Código Modificado
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `key` | text (PK) | Identificador único da configuração |
+| `value` | jsonb | Valor da configuração em JSON |
+
+### RLS Existente
+
+A política `Admins manage app settings` já está configurada:
+- Apenas usuários com role `admin` podem ler/escrever
+
+### Chaves de Configuração
+
+| Chave | Descrição |
+|-------|-----------|
+| `webhook_gerar_das` | URL do webhook para Gerar DAS |
+| `webhook_sitfis` | URL do webhook para SITFIS |
+| `webhook_cnd` | URL do webhook para CND Federal |
+| `cnpj_contratante` | CNPJ do Contratante |
+| `cnpj_autor_pedido` | CNPJ do Autor do Pedido |
+
+---
+
+## 2. Implementar Autenticação
+
+### 2.1 Criar Hook de Autenticação
+
+**Arquivo:** `src/hooks/useAuth.ts`
 
 ```typescript
-// Função auxiliar para detectar PDF pelos primeiros bytes
-const isPdfContent = (arrayBuffer: ArrayBuffer): boolean => {
-  const uint8Array = new Uint8Array(arrayBuffer);
-  // PDF começa com "%PDF" (0x25 0x50 0x44 0x46)
-  return (
-    uint8Array[0] === 0x25 && // %
-    uint8Array[1] === 0x50 && // P
-    uint8Array[2] === 0x44 && // D
-    uint8Array[3] === 0x46    // F
-  );
-};
+// Hook que gerencia estado de autenticação
+// - Verifica sessão ativa
+// - Verifica role do usuário (admin, financial_staff, viewer)
+// - Fornece funções de login/logout
+```
 
-// Função para converter ArrayBuffer em Base64
-const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-};
+### 2.2 Criar Página de Login
 
-// Na função handleSubmit:
-const response = await fetch(webhookUrl, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(payload),
-});
+**Arquivo:** `src/pages/LoginPage.tsx`
 
-// Obter resposta como ArrayBuffer para inspeção
-const arrayBuffer = await response.arrayBuffer();
-let pdfBase64Result = "";
+- Formulário de email/senha
+- Integração com Supabase Auth
+- Redirecionamento após login
 
-if (isPdfContent(arrayBuffer)) {
-  // Resposta é PDF binário (independente do content-type)
-  pdfBase64Result = arrayBufferToBase64(arrayBuffer);
-} else {
-  // Tentar processar como JSON
-  const textDecoder = new TextDecoder();
-  const jsonString = textDecoder.decode(arrayBuffer);
-  const rawData = JSON.parse(jsonString);
-  const data: CNDWorkflowResponse = Array.isArray(rawData) ? rawData[0] : rawData;
+### 2.3 Criar Componente de Rota Protegida
 
-  if (data.sucesso && data.pdfBase64) {
-    pdfBase64Result = data.pdfBase64;
-  } else {
-    const errorMsg = data.erro || data.mensagem || "Erro ao emitir CND";
-    throw new Error(errorMsg);
-  }
-}
+**Arquivo:** `src/components/ProtectedRoute.tsx`
+
+```typescript
+// Wrapper que verifica:
+// 1. Se usuário está autenticado
+// 2. Se usuário tem a role necessária (ex: admin)
+// Redireciona para login ou página de acesso negado
 ```
 
 ---
 
-## Arquivo: `src/pages/servicos/relatorio-situacao-fiscal/RelatorioSitFiscalPage.tsx`
+## 3. Criar Página de Configurações Centralizada
 
-Aplicar a mesma correção para garantir consistência em todo o sistema.
+### 3.1 Página Principal
 
----
-
-## Resumo das Tarefas
-
-| # | Tarefa | Arquivo |
-|---|--------|---------|
-| 1 | Adicionar função `isPdfContent()` para detectar PDF pelos primeiros bytes | `CNDFederalPage.tsx` |
-| 2 | Adicionar função `arrayBufferToBase64()` para conversão | `CNDFederalPage.tsx` |
-| 3 | Modificar `handleSubmit` para usar detecção por conteúdo | `CNDFederalPage.tsx` |
-| 4 | Aplicar mesma correção no SITFIS | `RelatorioSitFiscalPage.tsx` |
-
----
-
-## Detalhes Técnicos
-
-### Por que essa abordagem?
-
-1. **Robustez:** Não depende do header `content-type` que pode estar incorreto
-2. **Detecção Precisa:** Arquivos PDF sempre começam com `%PDF` (bytes 0x25 0x50 0x44 0x46)
-3. **Compatibilidade:** Funciona tanto se o n8n enviar o PDF com header correto quanto incorreto
-4. **Fallback JSON:** Se não for PDF, tenta processar como JSON normalmente
-
-### Fluxo de Dados
+**Arquivo:** `src/pages/admin/ConfiguracoesPage.tsx`
 
 ```text
-Resposta n8n
-     |
-     v
-ArrayBuffer (dados brutos)
-     |
-     v
-Verifica primeiros 4 bytes
-     |
-     +-- É "%PDF"? --> Converte para Base64 --> Exibe no iframe
-     |
-     +-- Não é PDF --> Decodifica como JSON --> Extrai pdfBase64
++--------------------------------------------------+
+|  [Shield] Configurações do Sistema               |
+|  Apenas administradores podem acessar            |
++--------------------------------------------------+
+
++--------------------------------------------------+
+|  Webhooks n8n                                    |
+|  ------------------------------------------------|
+|  URL Gerar DAS:    [________________________]    |
+|  URL SITFIS:       [________________________]    |
+|  URL CND Federal:  [________________________]    |
++--------------------------------------------------+
+
++--------------------------------------------------+
+|  Dados do Escritório                             |
+|  ------------------------------------------------|
+|  CNPJ Contratante:     [00.000.000/0000-00]     |
+|  CNPJ Autor Pedido:    [00.000.000/0000-00]     |
++--------------------------------------------------+
+
+          [Salvar Configurações]
 ```
+
+### 3.2 Hook para Configurações
+
+**Arquivo:** `src/hooks/useAppSettings.ts`
+
+```typescript
+// Hook que:
+// - Busca configurações do Supabase
+// - Salva configurações no Supabase
+// - Cache local para performance
+// - Fallback para valores padrão
+```
+
+---
+
+## 4. Atualizar Páginas de Serviço
+
+### 4.1 Remover Páginas de Configuração Individuais
+
+Remover arquivos:
+- `src/pages/servicos/gerar-das/ConfiguracoesGerarDas.tsx`
+- `src/pages/servicos/relatorio-situacao-fiscal/ConfiguracoesRelatorioSitFiscal.tsx`
+- `src/pages/servicos/cnd-federal/ConfiguracoesCND.tsx`
+
+### 4.2 Atualizar `config.ts`
+
+**Arquivo:** `src/utils/config.ts`
+
+Modificar para buscar do Supabase em vez de localStorage:
+
+```typescript
+// Funções async que buscam do banco
+// Com cache em memória para evitar requisições repetidas
+export const getWebhookUrl = async (): Promise<string>
+export const getSitFisWebhookUrl = async (): Promise<string>
+export const getCNDWebhookUrl = async (): Promise<string>
+export const getContratanteCnpj = async (): Promise<string>
+export const getAutorPedidoCnpj = async (): Promise<string>
+```
+
+### 4.3 Atualizar Páginas de Serviço
+
+Modificar para usar funções async:
+- `GerarDasPage.tsx`
+- `RelatorioSitFiscalPage.tsx`
+- `CNDFederalPage.tsx`
+
+---
+
+## 5. Atualizar Rotas
+
+**Arquivo:** `src/App.tsx`
+
+```typescript
+// Adicionar rotas:
+<Route path="/login" element={<LoginPage />} />
+<Route path="/admin/configuracoes" element={
+  <ProtectedRoute requiredRole="admin">
+    <ConfiguracoesPage />
+  </ProtectedRoute>
+} />
+
+// Remover rotas antigas de configuração individual
+```
+
+---
+
+## 6. Atualizar Home Page
+
+**Arquivo:** `src/pages/HomePage.tsx`
+
+- Adicionar link para Configurações (visível apenas para admins)
+- Adicionar botão de Login/Logout no header
+
+---
+
+## 7. Estrutura Final de Arquivos
+
+```text
+src/
+├── components/
+│   ├── ProtectedRoute.tsx          (NOVO)
+│   └── ...
+├── hooks/
+│   ├── useAuth.ts                  (NOVO)
+│   ├── useAppSettings.ts           (NOVO)
+│   └── ...
+├── pages/
+│   ├── LoginPage.tsx               (NOVO)
+│   ├── admin/
+│   │   └── ConfiguracoesPage.tsx   (NOVO)
+│   └── servicos/
+│       ├── gerar-das/
+│       │   └── (remover ConfiguracoesGerarDas.tsx)
+│       ├── relatorio-situacao-fiscal/
+│       │   └── (remover ConfiguracoesRelatorioSitFiscal.tsx)
+│       └── cnd-federal/
+│           └── (remover ConfiguracoesCND.tsx)
+└── utils/
+    └── config.ts                   (ATUALIZAR)
+```
+
+---
+
+## 8. Resumo das Tarefas
+
+| # | Tarefa | Arquivos |
+|---|--------|----------|
+| 1 | Criar hook de autenticação | `src/hooks/useAuth.ts` |
+| 2 | Criar página de login | `src/pages/LoginPage.tsx` |
+| 3 | Criar componente de rota protegida | `src/components/ProtectedRoute.tsx` |
+| 4 | Criar hook para app settings | `src/hooks/useAppSettings.ts` |
+| 5 | Criar página de configurações admin | `src/pages/admin/ConfiguracoesPage.tsx` |
+| 6 | Atualizar `config.ts` para Supabase | `src/utils/config.ts` |
+| 7 | Atualizar páginas de serviço | `GerarDasPage.tsx`, `RelatorioSitFiscalPage.tsx`, `CNDFederalPage.tsx` |
+| 8 | Atualizar rotas em `App.tsx` | `src/App.tsx` |
+| 9 | Atualizar Home Page com login/admin | `src/pages/HomePage.tsx` |
+| 10 | Remover páginas de config antigas | 3 arquivos |
+
+---
+
+## Notas de Segurança
+
+1. **RLS já configurado**: A tabela `app_settings` já possui política que restringe acesso a admins
+2. **Verificação server-side**: A função `has_role()` é SECURITY DEFINER, validando no banco
+3. **Autenticação Supabase**: Usa JWT tokens validados pelo servidor
+4. **Nunca confiar no cliente**: Mesmo com UI restrita, o banco valida permissões
