@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import type { DasRequest, DasResponse } from "@/types/das";
 import { getWebhookUrl, getContratanteCnpj, getAutorPedidoCnpj } from "@/utils/config";
+import { logger } from "@/utils/logger";
 
 const GerarDasPage = () => {
   const navigate = useNavigate();
@@ -97,9 +98,7 @@ const GerarDasPage = () => {
         });
       }
     } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error("Erro ao chamar webhook:", error);
-      }
+      logger.error("Erro ao chamar webhook:", error);
       toast.error("Erro de conexão", {
         description: "Não foi possível conectar ao servidor. Tente novamente.",
       });

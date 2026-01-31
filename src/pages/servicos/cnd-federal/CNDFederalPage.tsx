@@ -9,6 +9,7 @@ import { CNDStatusCard } from "@/components/cnd/CNDStatusCard";
 import { CNDResultCard } from "@/components/cnd/CNDResultCard";
 import { getCNDWebhookUrl } from "@/utils/config";
 import type { CNDRequest, CNDWorkflowResponse } from "@/types/cnd";
+import { logger } from "@/utils/logger";
 
 type Etapa = "processando" | "concluido" | "erro";
 
@@ -116,9 +117,7 @@ const CNDFederalPage = () => {
         throw new Error("Nenhum PDF retornado pelo servidor");
       }
     } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error("Erro ao emitir CND:", error);
-      }
+      logger.error("Erro ao emitir CND:", error);
       toast({
         title: "Erro de Rede",
         description: "Não foi possível conectar ao servidor. Verifique sua conexão.",

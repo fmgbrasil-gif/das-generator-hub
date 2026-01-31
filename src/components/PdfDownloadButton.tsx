@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Download, ExternalLink } from "lucide-react";
 import type { Das } from "@/types/das";
+import { logger } from "@/utils/logger";
 
 interface PdfDownloadButtonProps {
   das: Das;
@@ -33,9 +34,7 @@ export const PdfDownloadButton = ({ das }: PdfDownloadButtonProps) => {
         // Limpar o URL após o download
         setTimeout(() => URL.revokeObjectURL(url), 100);
       } catch (error) {
-        if (import.meta.env.DEV) {
-          console.error("Erro ao processar PDF Base64:", error);
-        }
+        logger.error("Erro ao processar PDF Base64:", error);
         alert("Erro ao fazer download do PDF. Por favor, tente novamente.");
       }
     }

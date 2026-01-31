@@ -9,6 +9,7 @@ import { SitFisStatusCard } from "@/components/sitfis/SitFisStatusCard";
 import { SitFisRelatorioCard } from "@/components/sitfis/SitFisRelatorioCard";
 import { getSitFisWebhookUrl, getContratanteCnpj, getAutorPedidoCnpj } from "@/utils/config";
 import type { SitFisRequest, SitFisWorkflowResponse } from "@/types/sitfis";
+import { logger } from "@/utils/logger";
 
 type Etapa = "processando" | "concluido" | "erro";
 
@@ -137,9 +138,7 @@ const RelatorioSitFiscalPage = () => {
         throw new Error("Nenhum PDF retornado pelo servidor");
       }
     } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error("Erro ao gerar relatório:", error);
-      }
+      logger.error("Erro ao gerar relatório:", error);
       toast({
         title: "Erro de Rede",
         description: "Não foi possível conectar ao servidor. Verifique sua conexão.",
