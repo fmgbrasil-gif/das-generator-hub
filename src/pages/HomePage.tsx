@@ -1,6 +1,6 @@
-import { FileSpreadsheet, FileCheck, Sparkles } from "lucide-react";
+import { FileSpreadsheet, FileCheck, Sparkles, ShieldCheck } from "lucide-react";
 import { ServiceCard } from "@/components/ServiceCard";
-import { getWebhookUrl, getContratanteCnpj, getAutorPedidoCnpj, getSitFisWebhookUrl } from "@/utils/config";
+import { getWebhookUrl, getContratanteCnpj, getAutorPedidoCnpj, getSitFisWebhookUrl, getCNDWebhookUrl } from "@/utils/config";
 
 const HomePage = () => {
   // Verificar se Gerar DAS está configurado
@@ -8,6 +8,9 @@ const HomePage = () => {
   
   // Verificar se Relatório Situação Fiscal está configurado
   const isSitFisConfigured = !!(getSitFisWebhookUrl() && getContratanteCnpj() && getAutorPedidoCnpj());
+
+  // Verificar se CND Federal está configurado
+  const isCNDConfigured = !!getCNDWebhookUrl();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background relative overflow-hidden">
@@ -39,7 +42,7 @@ const HomePage = () => {
         </header>
 
         {/* Services Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 max-w-5xl mx-auto mb-20">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 max-w-6xl mx-auto mb-20">
           <div className="animate-fade-in-up" style={{ animationDelay: "0.1s", animationFillMode: "both" }}>
             <ServiceCard
               title="Gerar DAS"
@@ -59,6 +62,17 @@ const HomePage = () => {
               servicePath="/servicos/relatorio-situacao-fiscal"
               isConfigured={isSitFisConfigured}
               iconColor="text-accent"
+            />
+          </div>
+
+          <div className="animate-fade-in-up" style={{ animationDelay: "0.3s", animationFillMode: "both" }}>
+            <ServiceCard
+              title="CND Federal"
+              description="Emita a Certidão Negativa de Débitos da Receita Federal"
+              icon={ShieldCheck}
+              servicePath="/servicos/cnd-federal"
+              isConfigured={isCNDConfigured}
+              iconColor="text-success"
             />
           </div>
         </div>

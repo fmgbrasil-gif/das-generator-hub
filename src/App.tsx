@@ -9,6 +9,8 @@ import GerarDasPage from "./pages/GerarDasPage";
 import ConfiguracoesGerarDas from "./pages/servicos/gerar-das/ConfiguracoesGerarDas";
 import RelatorioSitFiscalPage from "./pages/servicos/relatorio-situacao-fiscal/RelatorioSitFiscalPage";
 import ConfiguracoesRelatorioSitFiscal from "./pages/servicos/relatorio-situacao-fiscal/ConfiguracoesRelatorioSitFiscal";
+import CNDFederalPage from "./pages/servicos/cnd-federal/CNDFederalPage";
+import ConfiguracoesCND from "./pages/servicos/cnd-federal/ConfiguracoesCND";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +26,8 @@ const App = () => (
           <Route path="/servicos/gerar-das/configuracoes" element={<ConfiguracoesGerarDas />} />
           <Route path="/servicos/relatorio-situacao-fiscal" element={<RelatorioSitFiscalPage />} />
           <Route path="/servicos/relatorio-situacao-fiscal/configuracoes" element={<ConfiguracoesRelatorioSitFiscal />} />
+          <Route path="/servicos/cnd-federal" element={<CNDFederalPage />} />
+          <Route path="/servicos/cnd-federal/configuracoes" element={<ConfiguracoesCND />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
