@@ -32,7 +32,7 @@ export const CNDResultCard = ({ pdfBase64 }: CNDResultCardProps) => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error("Erro ao fazer download do PDF:", error);
+      // Error handled silently in production
     }
   };
 

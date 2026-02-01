@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { logger } from "@/utils/logger";
 
 export interface AppSettings {
   webhook_gerar_das: string;
@@ -66,7 +67,7 @@ export const useAppSettings = () => {
       cacheTimestamp = Date.now();
       setSettings(newSettings);
     } catch (err) {
-      console.error("Error fetching settings:", err);
+      logger.error("Error fetching settings:", err);
       setError("Erro ao carregar configurações");
     } finally {
       setIsLoading(false);
@@ -99,7 +100,7 @@ export const useAppSettings = () => {
 
       return { success: true };
     } catch (err) {
-      console.error("Error saving settings:", err);
+      logger.error("Error saving settings:", err);
       setError("Erro ao salvar configurações");
       return { success: false, error: err };
     } finally {
