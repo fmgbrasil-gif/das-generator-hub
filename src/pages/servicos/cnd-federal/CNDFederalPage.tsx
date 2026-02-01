@@ -45,9 +45,30 @@ const CNDFederalPage = () => {
 
   useEffect(() => {
     const loadConfig = async () => {
-      const url = await getCNDWebhookUrl();
-      setWebhookUrl(url);
-      setIsLoadingConfig(false);
+      // Timeout de 10 segundos para evitar carregamento infinito
+      const timeout = setTimeout(() => {
+        setIsLoadingConfig(false);
+        toast({
+          title: "Tempo esgotado",
+          description: "Não foi possível carregar as configurações.",
+          variant: "destructive",
+        });
+      }, 10000);
+
+      try {
+        const url = await getCNDWebhookUrl();
+        setWebhookUrl(url);
+      } catch (error) {
+        logger.error("Erro ao carregar configurações:", error);
+        toast({
+          title: "Erro",
+          description: "Erro ao carregar configurações.",
+          variant: "destructive",
+        });
+      } finally {
+        clearTimeout(timeout);
+        setIsLoadingConfig(false);
+      }
     };
     loadConfig();
   }, []);

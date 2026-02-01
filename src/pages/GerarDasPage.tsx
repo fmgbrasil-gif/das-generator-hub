@@ -26,13 +26,26 @@ const GerarDasPage = () => {
 
   useEffect(() => {
     const loadConfig = async () => {
-      const [webhookUrl, contratanteCnpj, autorPedidoCnpj] = await Promise.all([
-        getWebhookUrl(),
-        getContratanteCnpj(),
-        getAutorPedidoCnpj(),
-      ]);
-      setConfig({ webhookUrl, contratanteCnpj, autorPedidoCnpj });
-      setIsLoadingConfig(false);
+      // Timeout de 10 segundos para evitar carregamento infinito
+      const timeout = setTimeout(() => {
+        setIsLoadingConfig(false);
+        toast.error("Tempo esgotado ao carregar configurações");
+      }, 10000);
+
+      try {
+        const [webhookUrl, contratanteCnpj, autorPedidoCnpj] = await Promise.all([
+          getWebhookUrl(),
+          getContratanteCnpj(),
+          getAutorPedidoCnpj(),
+        ]);
+        setConfig({ webhookUrl, contratanteCnpj, autorPedidoCnpj });
+      } catch (error) {
+        logger.error("Erro ao carregar configurações:", error);
+        toast.error("Erro ao carregar configurações");
+      } finally {
+        clearTimeout(timeout);
+        setIsLoadingConfig(false);
+      }
     };
     loadConfig();
   }, []);
