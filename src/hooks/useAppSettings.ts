@@ -27,6 +27,26 @@ export const useAppSettings = () => {
   const [settings, setSettings] = useState<AppSettings>(settingsCache || defaultSettings);
   const [isLoading, setIsLoading] = useState(!settingsCache);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  const checkSession = async (): Promise<boolean> => {
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        setSessionExpired(true);
+        setError("Sessão expirada. Faça login novamente.");
+        return false;
+      }
+      
+      setSessionExpired(false);
+      return true;
+    } catch {
+      setSessionExpired(true);
+      setError("Erro ao verificar sessão.");
+      return false;
+    }
+  };
 
   const fetchSettings = async () => {
     // Use cache if valid
@@ -39,14 +59,23 @@ export const useAppSettings = () => {
     setIsLoading(true);
     setError(null);
 
+    // Verify session before fetching
+    const isAuthenticated = await checkSession();
+    if (!isAuthenticated) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { data, error: fetchError } = await supabase
         .from("app_settings")
         .select("key, value");
 
       if (fetchError) {
-        // If user doesn't have permission, use defaults silently
-        if (fetchError.code === "42501") {
+        // If RLS blocks access due to expired session or permission
+        if (fetchError.code === "42501" || fetchError.message?.includes("JWT")) {
+          setSessionExpired(true);
+          setError("Sessão expirada. Faça login novamente.");
           setSettings(defaultSettings);
           return;
         }
@@ -66,6 +95,7 @@ export const useAppSettings = () => {
       settingsCache = newSettings;
       cacheTimestamp = Date.now();
       setSettings(newSettings);
+      setSessionExpired(false);
     } catch (err) {
       logger.error("Error fetching settings:", err);
       setError("Erro ao carregar configurações");
@@ -74,9 +104,16 @@ export const useAppSettings = () => {
     }
   };
 
-  const saveSettings = async (newSettings: AppSettings) => {
-    setIsLoading(true);
+  const saveSettings = async (newSettings: AppSettings): Promise<{ success: boolean; error?: string }> => {
     setError(null);
+
+    // Verify session before saving
+    const isAuthenticated = await checkSession();
+    if (!isAuthenticated) {
+      return { success: false, error: "session_expired" };
+    }
+
+    setIsLoading(true);
 
     try {
       // Upsert each setting
@@ -90,7 +127,15 @@ export const useAppSettings = () => {
             { onConflict: "key" }
           );
 
-        if (upsertError) throw upsertError;
+        if (upsertError) {
+          // Check if it's an RLS/auth error
+          if (upsertError.code === "42501" || upsertError.message?.includes("JWT")) {
+            setSessionExpired(true);
+            setError("Sessão expirada. Faça login novamente.");
+            return { success: false, error: "session_expired" };
+          }
+          throw upsertError;
+        }
       }
 
       // Update cache
@@ -102,7 +147,7 @@ export const useAppSettings = () => {
     } catch (err) {
       logger.error("Error saving settings:", err);
       setError("Erro ao salvar configurações");
-      return { success: false, error: err };
+      return { success: false, error: "save_error" };
     } finally {
       setIsLoading(false);
     }
@@ -121,6 +166,7 @@ export const useAppSettings = () => {
     settings,
     isLoading,
     error,
+    sessionExpired,
     saveSettings,
     refetch: fetchSettings,
     invalidateCache,

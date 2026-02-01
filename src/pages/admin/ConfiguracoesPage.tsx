@@ -4,14 +4,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAppSettings, AppSettings } from "@/hooks/useAppSettings";
-import { Shield, ArrowLeft, Save, Loader2, Webhook, Building2 } from "lucide-react";
+import { Shield, ArrowLeft, Save, Loader2, Webhook, Building2, AlertTriangle, LogIn } from "lucide-react";
 import { toast } from "sonner";
 import { validateWebhookUrl } from "@/utils/logger";
 
 const ConfiguracoesPage = () => {
   const navigate = useNavigate();
-  const { settings, isLoading, saveSettings } = useAppSettings();
+  const { settings, isLoading, error, sessionExpired, saveSettings } = useAppSettings();
   const [formData, setFormData] = useState<AppSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -25,6 +26,14 @@ const ConfiguracoesPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Don't allow saving if session is expired
+    if (sessionExpired) {
+      toast.error("Sessão expirada", {
+        description: "Faça login novamente para salvar as configurações.",
+      });
+      return;
+    }
     
     // Validate webhook URLs before saving
     const webhookFields: (keyof AppSettings)[] = ['webhook_gerar_das', 'webhook_sitfis', 'webhook_cnd'];
@@ -48,11 +57,19 @@ const ConfiguracoesPage = () => {
 
     if (result.success) {
       toast.success("Configurações salvas com sucesso!");
+    } else if (result.error === "session_expired") {
+      toast.error("Sessão expirada", {
+        description: "Faça login novamente para salvar as configurações.",
+      });
     } else {
       toast.error("Erro ao salvar configurações");
     }
 
     setIsSaving(false);
+  };
+
+  const handleLogin = () => {
+    navigate("/login");
   };
 
   const formatCnpj = (value: string) => {
@@ -102,9 +119,41 @@ const ConfiguracoesPage = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8 max-w-3xl">
+        {/* Session Expired Alert */}
+        {sessionExpired && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Sessão Expirada</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3">
+              <p>
+                Sua sessão de autenticação expirou. As configurações não podem ser carregadas ou salvas 
+                até que você faça login novamente.
+              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleLogin}
+                className="w-fit"
+              >
+                <LogIn className="h-4 w-4 mr-2" />
+                Fazer Login
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* General Error Alert */}
+        {error && !sessionExpired && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Erro</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Webhooks Section */}
-          <Card>
+          <Card className={sessionExpired ? "opacity-60" : ""}>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Webhook className="h-5 w-5 text-primary" />
@@ -123,6 +172,7 @@ const ConfiguracoesPage = () => {
                   placeholder="https://seu-n8n.com/webhook/..."
                   value={formData.webhook_gerar_das}
                   onChange={(e) => handleChange("webhook_gerar_das", e.target.value)}
+                  disabled={sessionExpired}
                 />
               </div>
 
@@ -134,6 +184,7 @@ const ConfiguracoesPage = () => {
                   placeholder="https://seu-n8n.com/webhook/..."
                   value={formData.webhook_sitfis}
                   onChange={(e) => handleChange("webhook_sitfis", e.target.value)}
+                  disabled={sessionExpired}
                 />
               </div>
 
@@ -145,13 +196,14 @@ const ConfiguracoesPage = () => {
                   placeholder="https://seu-n8n.com/webhook/..."
                   value={formData.webhook_cnd}
                   onChange={(e) => handleChange("webhook_cnd", e.target.value)}
+                  disabled={sessionExpired}
                 />
               </div>
             </CardContent>
           </Card>
 
           {/* Company Data Section */}
-          <Card>
+          <Card className={sessionExpired ? "opacity-60" : ""}>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-primary" />
@@ -171,6 +223,7 @@ const ConfiguracoesPage = () => {
                   value={formData.cnpj_contratante}
                   onChange={(e) => handleChange("cnpj_contratante", formatCnpj(e.target.value))}
                   maxLength={18}
+                  disabled={sessionExpired}
                 />
                 <p className="text-xs text-muted-foreground">
                   CNPJ do escritório contratante do serviço
@@ -186,6 +239,7 @@ const ConfiguracoesPage = () => {
                   value={formData.cnpj_autor_pedido}
                   onChange={(e) => handleChange("cnpj_autor_pedido", formatCnpj(e.target.value))}
                   maxLength={18}
+                  disabled={sessionExpired}
                 />
                 <p className="text-xs text-muted-foreground">
                   CNPJ do responsável pela solicitação
@@ -196,7 +250,7 @@ const ConfiguracoesPage = () => {
 
           {/* Submit Button */}
           <div className="flex justify-end">
-            <Button type="submit" size="lg" disabled={isSaving}>
+            <Button type="submit" size="lg" disabled={isSaving || sessionExpired}>
               {isSaving ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
