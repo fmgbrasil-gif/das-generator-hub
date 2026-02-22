@@ -1,85 +1,28 @@
 
-# Plano: Recriar Tabela `app_settings` no Banco de Dados
+# Plano: Corrigir URL de Preconnect e Publicar
 
-## Problema Identificado
+## Problema
 
-A tabela `app_settings` foi apagada quando o banco de dados original foi deletado. Essa tabela e essencial para o funcionamento do sistema -- ela armazena as configuracoes de webhooks e CNPJs usados pelas paginas de servico (Gerar DAS, CND Federal, Relatorio Situacao Fiscal).
+O sistema funciona corretamente no ambiente de teste (preview), mas o site publicado ainda usa o codigo antigo que aponta para o banco de dados que foi apagado. Alem disso, o `index.html` tem links de preconnect apontando para o Supabase antigo.
 
-**Tabelas que o codigo referencia:**
-- `user_roles` -- Existe no banco
-- `app_settings` -- NAO existe no banco (causa dos erros de build)
+## Correção
 
-**Todas as outras 24 tabelas do banco estao presentes e integras.**
+### 1. Atualizar preconnect no index.html
 
-## O Que Sera Feito
+Trocar a URL antiga pela nova:
 
-### 1. Criar a tabela `app_settings` via migracao SQL
+- **De:** `https://wdbtqanwncruzbvnxmrk.supabase.co`
+- **Para:** `https://xysfgpqhofvysgqomzcm.supabase.co`
 
-```text
-Estrutura da tabela:
-- key (text, PRIMARY KEY) -- nome da configuracao
-- value (text) -- valor da configuracao  
-- created_at (timestamptz, default now())
-- updated_at (timestamptz, default now())
-```
+Linhas 23-24 do `index.html`.
 
-### 2. Politicas de seguranca (RLS)
+### 2. Publicar as alteracoes
 
-- **Leitura publica**: qualquer usuario pode ler (necessario para carregar webhooks nas paginas de servico)
-- **Escrita restrita**: somente admins podem inserir, atualizar e deletar
+Apos a correcao, voce precisa **publicar** o projeto para que o site em producao use o novo banco de dados.
 
-### 3. Inserir dados iniciais
+## Resumo
 
-As 5 configuracoes esperadas pelo codigo serao inseridas com valores vazios para evitar erros:
-
-| Chave | Descricao |
-|-------|-----------|
-| `webhook_gerar_das` | URL do webhook para gerar DAS |
-| `webhook_sitfis` | URL do webhook para situacao fiscal |
-| `webhook_cnd` | URL do webhook para CND |
-| `cnpj_contratante` | CNPJ do contratante |
-| `cnpj_autor_pedido` | CNPJ do autor do pedido |
-
-Voce precisara preencher os valores corretos na pagina de Configuracoes apos o login como admin.
-
-### 4. Atualizar os tipos TypeScript
-
-Apos a criacao da tabela, os tipos do Supabase serao regenerados automaticamente, corrigindo todos os erros de build.
-
----
-
-## Resumo Tecnico
-
-**SQL da migracao:**
-
-```text
-CREATE TABLE public.app_settings (
-  key text PRIMARY KEY,
-  value text,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
-ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
-
--- Leitura publica
-CREATE POLICY "Anyone can read app settings"
-  ON public.app_settings FOR SELECT USING (true);
-
--- Escrita restrita a admins
-CREATE POLICY "Admins can manage app settings"
-  ON public.app_settings FOR ALL
-  TO authenticated
-  USING (has_role(auth.uid(), 'admin'::app_role))
-  WITH CHECK (has_role(auth.uid(), 'admin'::app_role));
-
--- Dados iniciais
-INSERT INTO public.app_settings (key, value) VALUES
-  ('webhook_gerar_das', ''),
-  ('webhook_sitfis', ''),
-  ('webhook_cnd', ''),
-  ('cnpj_contratante', ''),
-  ('cnpj_autor_pedido', '');
-```
-
-**Resultado esperado:** Todos os 18 erros de build serao corrigidos e o sistema voltara a funcionar normalmente.
+| Arquivo | Mudanca |
+|---------|---------|
+| `index.html` | Atualizar URLs de preconnect para novo Supabase |
+| Publicacao | Necessario publicar para corrigir o site em producao |
