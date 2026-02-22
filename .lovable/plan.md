@@ -1,142 +1,85 @@
 
-# Plano: Corrigir Carregamento Infinito para Usuarios Nao Logados
+# Plano: Recriar Tabela `app_settings` no Banco de Dados
 
 ## Problema Identificado
 
-A tabela `app_settings` possui uma politica RLS que so permite leitura para usuarios com role `admin`:
+A tabela `app_settings` foi apagada quando o banco de dados original foi deletado. Essa tabela e essencial para o funcionamento do sistema -- ela armazena as configuracoes de webhooks e CNPJs usados pelas paginas de servico (Gerar DAS, CND Federal, Relatorio Situacao Fiscal).
 
-```sql
-Policy: Admins manage app settings
-USING: has_role(auth.uid(), 'admin'::app_role)
+**Tabelas que o codigo referencia:**
+- `user_roles` -- Existe no banco
+- `app_settings` -- NAO existe no banco (causa dos erros de build)
+
+**Todas as outras 24 tabelas do banco estao presentes e integras.**
+
+## O Que Sera Feito
+
+### 1. Criar a tabela `app_settings` via migracao SQL
+
+```text
+Estrutura da tabela:
+- key (text, PRIMARY KEY) -- nome da configuracao
+- value (text) -- valor da configuracao  
+- created_at (timestamptz, default now())
+- updated_at (timestamptz, default now())
 ```
 
-Quando um usuario **nao esta logado**:
-1. A funcao `getAllAppSettings()` consulta o Supabase
-2. O RLS bloqueia e retorna um array vazio `[]`
-3. O codigo preenche `defaultSettings` (valores vazios)
-4. Porem, `setIsLoadingConfig(false)` **e** chamado corretamente
+### 2. Politicas de seguranca (RLS)
 
-O problema real esta em que as paginas de servico (`GerarDasPage`, `CNDFederalPage`, `RelatorioSitFiscalPage`) nao verificam se as configuracoes estao vazias antes de permitir o uso. O sistema carrega normalmente mas mostra campos vazios.
+- **Leitura publica**: qualquer usuario pode ler (necessario para carregar webhooks nas paginas de servico)
+- **Escrita restrita**: somente admins podem inserir, atualizar e deletar
 
-Analisando novamente: o teste no browser mostrou que a pagina carrega! O problema pode estar em:
-- Cache do browser
-- Versao publicada desatualizada
-- Erro intermitente de rede
+### 3. Inserir dados iniciais
 
-Porem, vou propor uma solucao robusta que adiciona uma politica de **leitura publica** para webhooks e tratamento de timeout.
+As 5 configuracoes esperadas pelo codigo serao inseridas com valores vazios para evitar erros:
+
+| Chave | Descricao |
+|-------|-----------|
+| `webhook_gerar_das` | URL do webhook para gerar DAS |
+| `webhook_sitfis` | URL do webhook para situacao fiscal |
+| `webhook_cnd` | URL do webhook para CND |
+| `cnpj_contratante` | CNPJ do contratante |
+| `cnpj_autor_pedido` | CNPJ do autor do pedido |
+
+Voce precisara preencher os valores corretos na pagina de Configuracoes apos o login como admin.
+
+### 4. Atualizar os tipos TypeScript
+
+Apos a criacao da tabela, os tipos do Supabase serao regenerados automaticamente, corrigindo todos os erros de build.
 
 ---
 
-## Solucao Proposta
+## Resumo Tecnico
 
-### 1. Adicionar Politica RLS para Leitura Anonima (Opcional)
+**SQL da migracao:**
 
-Criar uma politica que permite leitura das configuracoes para qualquer usuario (logado ou nao), mantendo a escrita restrita a admins.
+```text
+CREATE TABLE public.app_settings (
+  key text PRIMARY KEY,
+  value text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
 
-**SQL Migration:**
-```sql
--- Politica para permitir leitura anonima das configuracoes
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+
+-- Leitura publica
 CREATE POLICY "Anyone can read app settings"
-ON public.app_settings
-FOR SELECT
-USING (true);
+  ON public.app_settings FOR SELECT USING (true);
+
+-- Escrita restrita a admins
+CREATE POLICY "Admins can manage app settings"
+  ON public.app_settings FOR ALL
+  TO authenticated
+  USING (has_role(auth.uid(), 'admin'::app_role))
+  WITH CHECK (has_role(auth.uid(), 'admin'::app_role));
+
+-- Dados iniciais
+INSERT INTO public.app_settings (key, value) VALUES
+  ('webhook_gerar_das', ''),
+  ('webhook_sitfis', ''),
+  ('webhook_cnd', ''),
+  ('cnpj_contratante', ''),
+  ('cnpj_autor_pedido', '');
 ```
 
-Isso permite que usuarios nao logados vejam as URLs de webhook (que nao sao sensiveis).
-
-### 2. Adicionar Timeout ao Carregamento
-
-Modificar as paginas de servico para incluir um timeout de seguranca, evitando carregamento infinito em caso de erro de rede.
-
-**Arquivos a modificar:**
-- `src/pages/GerarDasPage.tsx`
-- `src/pages/servicos/cnd-federal/CNDFederalPage.tsx`
-- `src/pages/servicos/relatorio-situacao-fiscal/RelatorioSitFiscalPage.tsx`
-
-**Exemplo de codigo:**
-```typescript
-useEffect(() => {
-  const loadConfig = async () => {
-    // Timeout de 10 segundos
-    const timeout = setTimeout(() => {
-      setIsLoadingConfig(false);
-      toast.error("Tempo esgotado ao carregar configuracoes");
-    }, 10000);
-    
-    try {
-      const [webhookUrl, ...] = await Promise.all([...]);
-      setConfig({ webhookUrl, ... });
-    } catch (error) {
-      console.error("Erro ao carregar config:", error);
-    } finally {
-      clearTimeout(timeout);
-      setIsLoadingConfig(false);
-    }
-  };
-  loadConfig();
-}, []);
-```
-
-### 3. Melhorar Tratamento de Erro em getAllAppSettings
-
-Adicionar try/catch e garantir que sempre retorna um resultado, mesmo em caso de erro.
-
-**Arquivo:** `src/hooks/useAppSettings.ts`
-
-```typescript
-export const getAllAppSettings = async (): Promise<AppSettings> => {
-  try {
-    // ... codigo existente ...
-  } catch (error) {
-    console.error("Erro ao buscar configuracoes:", error);
-    return defaultSettings; // Sempre retorna algo
-  }
-};
-```
-
----
-
-## Alternativa: Manter RLS Restritivo
-
-Se voce preferir manter as configuracoes privadas (so para admins), a solucao seria:
-
-1. Exibir uma mensagem amigavel quando configuracoes nao estao disponiveis
-2. Redirecionar para login quando necessario
-3. Adicionar timeout para evitar tela travada
-
-**Exemplo de UI:**
-```typescript
-if (!isLoadingConfig && !config.webhookUrl) {
-  return (
-    <div className="text-center">
-      <p>Servico nao configurado</p>
-      <Button onClick={() => navigate("/login")}>
-        Fazer login para continuar
-      </Button>
-    </div>
-  );
-}
-```
-
----
-
-## Resumo das Mudancas
-
-| Arquivo | Mudanca |
-|---------|---------|
-| Supabase (SQL) | Nova politica RLS para leitura publica |
-| `GerarDasPage.tsx` | Timeout de 10s + tratamento de erro |
-| `CNDFederalPage.tsx` | Timeout de 10s + tratamento de erro |
-| `RelatorioSitFiscalPage.tsx` | Timeout de 10s + tratamento de erro |
-| `useAppSettings.ts` | Garantir retorno mesmo em erro |
-
----
-
-## Recomendacao
-
-Sugiro a **Alternativa Hibrida**:
-1. Adicionar timeout para evitar travamento
-2. Manter RLS restritivo (seguranca)
-3. Mostrar mensagem clara pedindo login quando configuracoes nao carregam
-
-Isso garante seguranca e boa experiencia do usuario.
+**Resultado esperado:** Todos os 18 erros de build serao corrigidos e o sistema voltara a funcionar normalmente.
